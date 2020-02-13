@@ -4,189 +4,250 @@
 using namespace cv;
 using namespace std;
 
+void Template(Mat frame, Mat T, struct Bbox bbox, int x, int  y);
+void Area_Busqueda(Mat frame, struct Bbox bbox, struct A_Busqueda* a_busqueda, int x, int y, struct Path path);
+void Buscar_Template(Mat frame, Mat T, Mat Tnew, Mat Rc, struct A_Busqueda* a_busqueda, struct Bbox bbox, 
+					struct X_Y_Optima* xy_optima, struct Des_Prom* des_prom);
+float Calcular_Rc(Mat T, Mat Tnew, Mat Rc);
+void Calcular_Promedio_Destandar(Mat frame, Mat frame_new, Mat T, Mat Tnew, Mat Rc, struct Bbox bbox,
+								struct A_Busqueda* a_busqueda, struct X_Y_Optima* xy_optima, struct Path path,
+								struct Des_Prom* des_prom, float* sum_Rc_min);
+void crear_vec(float* sum_Rc_min, int NoMuestra);
+void Crear_Frame(Mat frame, struct Bbox bbox, struct A_Busqueda* a_busqueda, struct Path path, struct X_Y_Optima *xy_optima);
 
-void Template(cv::Mat img, cv::Mat T, float x, float y, int w, int h);
-void Buscar_Template(cv::Mat img, cv::Mat T, cv::Mat Tnew, cv::Mat Rc, int w, int h, int* pos[], float* sum_Rc_min, int* i_op, int* j_op);
-float Suma(cv::Mat T);
-void NormalizacionRc(cv::Mat T, cv::Mat Tnew, cv::Mat Rc);
-void Calcular_promedio_Destandar(cv::Mat img, cv::Mat T, cv::Mat Tnew, cv::Mat Rc, int w, int h, float* vec_sum_Rc_min[],
-	int* pos[], int NoMuestra, float* promedio, float* DesvEst, int* pos_i, int* pos_j);
-
-
-struct BBbox
+struct Bbox
 {
-	float x;
-	float y;
-	int w;
-	int h;
+	int x=50;
+	int y=131;
+	int w=36;
+	int h=89;
 };
 
-
-
-int main()
+struct Path
 {
-	//configuramos las rutas de entradas y salidas
-	char entrada[50] = "D:/data/Entradas/";
-	char salida[50] = "D:/data/Salidas/";
-	char salidaimg[50] = "";
-
-	//
-	FILE* fp;
-	char img_in[50] = "";
-	char archivo[50] = "";
-
-	//configuramos la carpeta
-	char carpeta[50] = "Bike";
+	char entrada[50] = "D:/cmt_dataset/";
+	char salida[50] = "D:/cmt/cmt_est/";
+	char carpeta[50] = "juice";
 	char tipo[5] = "jpg";
-	int Frames = 600;
+	int Frames = 404;
 	float rho = 1.5;
+	int NoMuestra=404;
+	char salidaaux[50] = "";
+};
 
-	//BBox
-	BBbox bbox = BBbox();
-	bbox.x = 214;
-	bbox.y = 302;
-	bbox.w = 132;
-	bbox.h = 430;
-
-	//opencv
-	cv::Mat FrameI;
-	cv::Mat Framenew;
-	cv::Mat T;
-	cv::Mat Tnew;
-	cv::Mat Rc;
-	cv::Scalar color(255, 0, 0);
-	cv::Scalar color2(0, 255, 0);
-	cv::Scalar color3(255, 255, 0);
-
-	//calculan las posiciones (x, y) del template
-	float Sx0 = 0.0f;
-	float Sy0 = 0.0f;
-	float Sx1 = 0.0f;
-	float Sy1 = 0.0f;
-
-	//posisciones iniciales y finales del area de busqueda
+struct A_Busqueda
+{
 	float pos_in_x = 0.0f;
 	float pos_in_y = 0.0f;
 	float pos_fin_x = 0.0f;
 	float pos_fin_y = 0.0f;
+};
 
-	////
-	sprintf_s(entrada, "%s%s/", entrada, carpeta);
-	sprintf_s(salida, "%s%s/", salida, carpeta);
-	sprintf_s(archivo, "%ssalida.txt", salida);
-	sprintf_s(img_in, "%s00001.%s", entrada, tipo);
-	//fp = fopen(archivo, "r+");
-	FrameI = cv::imread(img_in, 0);
+struct Centro
+{
+	float Sx = 0.0f;
+	float Sy = 0.0f;
+};
 
+struct X_Y_Optima
+{
+	int x = 0;
+	int y = 0;
+};
 
-	//se calcula el centro de la figura
-	Sx0 = bbox.x + (bbox.h / 2);
-	Sy0 = bbox.y + (bbox.w / 2);
+struct Des_Prom
+{
+	float promedio = 0;
+	float Desv_Estandar = 0;
+	float sum_Rc_min = 0;
+};
+int main()
+{
+	struct Bbox bbox;
+	struct Path path;
+	struct A_Busqueda ap_a_busqueda;
+	struct A_Busqueda *a_busqueda=&ap_a_busqueda;
+	struct Centro ap_centro;
+	struct Centro* centro=&ap_centro;
+	struct X_Y_Optima ap_x_y_optima;
+	struct X_Y_Optima *x_y_optima=&ap_x_y_optima;
+	struct Des_Prom a_des_prom;
+	struct Des_Prom *des_prom=&a_des_prom;
+	Mat frame;
+	Mat frame_new;
+	Mat T;
+	Mat Tnew;
+	Mat Rc;
+	float a = 0;
+	float *sum_Rc_min=&a;
+	char img_in[50] = "";
+	char archivo[50] = "";
+	
 
+	sprintf_s(path.entrada, "%s%s/", path.entrada, path.carpeta);
+	sprintf_s(path.salida, "%s%s/", path.salida, path.carpeta);
+	sprintf_s(img_in, "%s00000001.%s", path.entrada, path.tipo);
 
-	//se sacan la posiciones iniciales y finales
-	pos_in_x = (Sx0 - (rho * bbox.h));
-	pos_in_y = (Sy0 - (rho * bbox.w));
-	pos_fin_x = (Sx0 + (rho * bbox.h));//largo
-	pos_fin_y = (Sy0 + (rho * bbox.w));//ancho
-	if (pos_in_y < 0) {
-		pos_in_y = 0;
-	}
-	if (pos_in_x < 0) {
-		pos_in_x = 0;
-	}
-	if (pos_fin_y > FrameI.cols) {
-		pos_fin_y = FrameI.cols;
-	}
-	if (pos_fin_x > FrameI.rows) {
-		pos_fin_x = FrameI.rows;
-	}
+	frame = imread(img_in,0);
 
+	T.create(bbox.h, bbox.w, CV_8UC1);
+	Tnew.create(bbox.h, bbox.w, CV_8UC1);
+	Rc.create(bbox.h, bbox.w, CV_32FC1);
+
+	Calcular_Promedio_Destandar(frame, frame_new, T, Tnew, Rc, bbox, a_busqueda, x_y_optima, path, des_prom, sum_Rc_min);
+	
 }
 
-
-
-void Template(cv::Mat img, cv::Mat T, float x, float y, int w, int h)
+void Template(Mat frame, Mat T, struct Bbox bbox, int x, int  y)
 {
-	for (int i = 0; i < h; i++)
-	{
-		for (int j = 0; j < w; j++)
+	for (int i = 0; i < bbox.h; i++) {
+		for (int j = 0; j <bbox.w; j++)
 		{
-			T.at<unsigned char>(i, j) = img.at<unsigned char>(i + x, j + y);
+			T.at<unsigned char>(i, j) = frame.at<unsigned char>(i + x, j + y);
 		}
 	}
 }
 
-void Buscar_Template(cv::Mat img, cv::Mat T, cv::Mat Tnew, cv::Mat Rc, int w, int h, int* pos[], float* sum_Rc_min, int* i_op, int* j_op)
+void Area_Busqueda(Mat frame, struct Bbox bbox, struct A_Busqueda *a_busqueda, int x, int y, struct Path path)
 {
-	for (unsigned int i = *pos[0]; i > * pos[1]; i++)
+	int Sx = 0;
+	int Sy = 0;
+
+	/*
+	int x=50;
+	int y=131;
+	int w=36;
+	int h=89;*/
+
+	Sx = x + (bbox.h / 2);//=94.5
+	Sy = y + (bbox.w / 2);//=149
+
+	a_busqueda->pos_in_x = Sx - (path.rho * bbox.h);//=-39.5=0
+	a_busqueda->pos_in_y = Sy - (path.rho * bbox.w);//=95
+	a_busqueda->pos_fin_x = Sx + (path.rho * bbox.h);//=228
+	a_busqueda->pos_fin_y = Sy + (path.rho * bbox.w);//=203
+
+	if (a_busqueda->pos_in_y < 0) 
 	{
-		for (unsigned int j = *pos[2]; j < *pos[3]; j++)
+		a_busqueda->pos_in_y = 0;
+	}
+
+	if (a_busqueda->pos_in_x < 0) 
+	{
+		a_busqueda->pos_in_x = 0;
+	}
+	if (a_busqueda->pos_fin_y > frame.cols) 
+	{
+		a_busqueda->pos_fin_y = (float)frame.cols;
+	}
+	if (a_busqueda->pos_fin_x > frame.rows) 
+	{
+		a_busqueda->pos_fin_x = (float)frame.rows;
+	}
+}
+
+void Buscar_Template(Mat frame, Mat T, Mat Tnew, Mat Rc, struct A_Busqueda *a_busqueda,struct Bbox bbox, struct X_Y_Optima *xy_optima, struct Des_Prom* des_prom) 
+{
+	float suma_Rc = 0;
+	float r_min = 255*255*bbox.h*bbox.w;
+	int ii = 0;
+	int jj = 0;
+	printf("%f %f %f %f", a_busqueda->pos_in_x, a_busqueda->pos_fin_x, a_busqueda->pos_in_y, a_busqueda->pos_fin_y);
+
+	for (int i = (int)a_busqueda->pos_in_x; i < (int)a_busqueda->pos_fin_x - bbox.h; i++)
+	{
+		for (int j = (int)a_busqueda->pos_in_y; j < (int)a_busqueda->pos_fin_y - bbox.w; j++)
 		{
-			Template(img, Tnew, w, h, i, j);
-			NormalizacionRc(T, Tnew, Rc);
-			float sum_Rc = Suma(Rc);
-			if (sum_Rc <= *sum_Rc_min) {
-				*sum_Rc_min = sum_Rc;
-				*i_op = i;
-				*j_op = j;
+			Template(frame, Tnew, bbox, i, j);
+			suma_Rc = Calcular_Rc(T, Tnew, Rc);
+			if (suma_Rc <r_min)
+			{
+				r_min = suma_Rc;
+				ii = i;
+				jj = j;
 			}
 		}
 	}
+	xy_optima->x = ii;
+	xy_optima->y = jj;
+	des_prom->sum_Rc_min = r_min;
 }
 
-void NormalizacionRc(cv::Mat T, cv::Mat Tnew, cv::Mat Rc)
+float Calcular_Rc(Mat T, Mat Tnew, Mat Rc) 
 {
-	int row = T.rows;
-	int cols = T.cols;
+	int f = T.rows;
+	int c = T.cols;
+	float suma = 0;
 
-	for (int i = 0; i < row; i++)
+	for (int i = 0; i < f; i++) 
 	{
-		for (int j = 0; j < cols; j++)
+		for (int j = 0; j < c; j++)
 		{
 			Rc.at<float>(i, j) = (float)T.at<unsigned char>(i, j) - (float)Tnew.at<unsigned char>(i, j);
 			Rc.at<float>(i, j) = Rc.at<float>(i, j) * Rc.at<float>(i, j);
+			suma = suma + Rc.at<float>(i, j);
 		}
 	}
-
-}
-
-float Suma(cv::Mat T)
-{
-	int rows = T.rows;
-	int cols = T.cols;
-	float suma = 0;
-
-	for (int i = 0; i < rows; i++)
-	{
-		for (int j = 0; j < cols; j++) {
-			suma = suma + T.at<float>(i, j);
-		}
-	}
-
 	return suma;
 }
 
-void Calcular_promedio_Destandar(cv::Mat img, cv::Mat T, cv::Mat Tnew, cv::Mat Rc, int w, int h, float* vec_sum_Rc_min[],
-	int* pos[], int NoMuestra, float* promedio, float* DesvEst, int* pos_i, int* pos_j)
+void Calcular_Promedio_Destandar( Mat frame, Mat frame_new, Mat T, Mat Tnew, Mat Rc,
+	struct Bbox bbox, struct A_Busqueda *a_busqueda, struct X_Y_Optima *xy_optima, struct Path path,
+	struct Des_Prom *des_prom, float *sum_Rc_min) 
 {
-	float* sum_Rc_min = 0;
-	float varianza = 0.0;
-	for (int t = 0; t < NoMuestra; t++)
-	{
-		Buscar_Template(img, T, Tnew, Rc, w, h, pos, sum_Rc_min, pos_i, pos_j);
-		vec_sum_Rc_min[t] = sum_Rc_min;
-		*promedio = *promedio + *sum_Rc_min;
+	char img_in[50] = "";
+	char img[20] = "";
+	float promedio = 0;
+	float varianza = 0;
+
+	crear_vec(sum_Rc_min, path.NoMuestra);
+	Area_Busqueda(frame, bbox, a_busqueda, bbox.x, bbox.y, path);
+	Template(frame,T, bbox, bbox.x, bbox.y);
+
+	for (int i = 0; i <= path.NoMuestra; i++) {
+		sprintf_s(img, sizeof(img), "%08d", (i+1));
+		sprintf_s(img_in, "%s%s.%s", path.entrada, img, path.tipo);
+		sprintf_s(path.salidaaux, "%s%s.%s", path.salida, img, path.tipo);
+		printf("\n%s\n", img_in);
+		frame = imread(img_in, 0);
+		frame_new = imread(img_in);
+		Buscar_Template(frame, T, Tnew, Rc, a_busqueda,bbox, xy_optima, des_prom);
+		Area_Busqueda(frame, bbox, a_busqueda, xy_optima->x, xy_optima->y, path);
+		Crear_Frame(frame_new, bbox, a_busqueda, path, xy_optima);
+		sum_Rc_min[i] = des_prom->sum_Rc_min;
+		promedio = promedio + des_prom->sum_Rc_min;
 	}
+	des_prom->promedio = promedio;
 
-	*promedio = *promedio / NoMuestra;
-
-	for (int i = 0; i < NoMuestra; i++)
-	{
-		varianza = varianza + (vec_sum_Rc_min[i] - promedio) * (vec_sum_Rc_min[i] - promedio);
+	for (int i = 0; i < path.NoMuestra; i++) {
+		varianza = varianza + (sum_Rc_min[i] -promedio)* (sum_Rc_min[i] - promedio);
 	}
-	varianza = varianza / (NoMuestra - 1);
-	*DesvEst = sqrt(varianza);
-
+	varianza = varianza / (path.NoMuestra - 1);
+	des_prom->Desv_Estandar = sqrt(varianza);
 }
 
+
+///////////////////////////////////////////////////////////////////////////
+void crear_vec(float *sum_Rc_min, int NoMuestra) {
+	sum_Rc_min = (float*)malloc(NoMuestra * sizeof(int));
+	if (sum_Rc_min == NULL)
+	{
+		perror("problemas resercando memoria");
+		exit(1);
+	}
+}
+
+void Crear_Frame(Mat frame, struct Bbox bbox, struct A_Busqueda *a_busqueda, struct Path path, struct X_Y_Optima *xy_optima) 
+{
+	Scalar color(255, 0, 0);
+	Scalar color2(0, 255, 0);
+	Scalar color3(255, 255, 0);
+
+	Point templatein(xy_optima->y, xy_optima->x);
+	Point templatefin(xy_optima->y+ bbox.w, xy_optima->x + bbox.h);
+	Point ini((int)a_busqueda->pos_in_y, (int)a_busqueda->pos_in_x);
+	Point fin((int)a_busqueda->pos_fin_y, (int)a_busqueda->pos_fin_x);
+	rectangle(frame, templatein, templatefin, color2, 2);
+	rectangle(frame, ini, fin, color2, 2);
+	cv::imwrite(path.salidaaux, frame);
+}
